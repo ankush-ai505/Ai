@@ -1,0 +1,3 @@
+Develop a web-based application that utilizes machine learning algorithms and models to produce synthetic data. The application should initially be trained on a smaller data sample to optimize the model. Once the model is sufficiently trained, it should be used to generate synthetic data in larger volumes.
+The application must prioritize data security and anonymization throughout the model training and synthetic data generation processes. Therefore, it is essential to incorporate suitable features that ensure data security and facilitate the generation of synthetic data.
+ 
