@@ -2,318 +2,359 @@
 #*Start of AI Generated Content*
 
 python
-# ***********************************************************
-# *                                                         *
-# *  Constants and Static Values                           *
-# *                                                         *
-# ***********************************************************
+# -*- coding: utf-8 -*-
 
-# Constants for Validation Error Messages
-INVALID_EMAIL_ERROR = "Invalid email address"
-INVALID_PHONE_NUMBER_ERROR = "Invalid phone number"
-PASSWORD_LENGTH_ERROR = "Password must be at least 8 characters long"
-PASSWORD_COMPLEXITY_ERROR = "Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character"
-INVALID_NAME_ERROR = "Name should be at least 2 characters long and only contain letters"
-INVALID_AGE_ERROR = "Age must be a number between 18 and 99"
-INVALID_SEX_ERROR = "Sex should be either 'Male' or 'Female'"
-INVALID_ADDRESS_ERROR = "Address should be at least 5 characters long and contain only letters, numbers, and spaces"
+"""
+User Registration and Management API
+=====================================
+"""
 
-# Constants for MongoDB
-MONGO_DB_URL = "mongodb://localhost:27017/"
-DATABASE_NAME = "user_database"
-COLLECTION_NAME = "users"
-
-# Constants for Food Preferences
-FOOD_PREFERENCES = [
-    "Indian",
-    "Chinese",
-    "French",
-    "Italian",
-    "Mexican",
-    "Japanese",
-    "Thai",
-    "American",
-    "Greek",
-    "Mediterranean"
-]
-
-# ***********************************************************
-# *                                                         *
-# *  Import Statements                                      *
-# *                                                         *
-# ***********************************************************
-
+import os
 import re
+import bcrypt
 from flask import Flask, request, jsonify
 from flask_pymongo import PyMongo
-from bson.objectid import ObjectId
-import bcrypt
-import logging
+from werkzeug.utils import secure_filename
 
-# ***********************************************************
-# *                                                         *
-# *  Flask Application                                      *
-# *                                                         *
-# ***********************************************************
+# Constants and Static Values
+APP_ROOT = os.path.dirname(os.path.abspath(__file__))
+UPLOAD_FOLDER = os.path.join(APP_ROOT, 'uploads')
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg'}
+MONGO_URI = "mongodb://localhost:27017/"
+DB_NAME = "user_management"
+COLLECTION_USERS = "users"
+COLLECTION_RESET_PASSWORD = "reset_password"
+TOP_FOOD_TYPES = [
+    "Indian", "Chinese", "French", "Italian", "Mexican",
+    "Japanese", "Thai", "American", "Greek", "Mediterranean"
+]
+EMAIL_REGEX = r"[^@]+@[^@]+\.[^@]+"
+PHONE_REGEX = r"\d{3}-\d{3}-\d{4}"
+PASSWORD_REGEX = r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*#?&])[A-Za-z\d@$!%*#?&]{8,}$"
+NAME_REGEX = r"^[a-zA-Z]{2,}$"
+AGE_RANGE = range(18, 100)
+SEX_OPTIONS = ["Male", "Female"]
+ADDRESS_REGEX = r"^[a-zA-Z0-9\s]{5,}$"
 
 app = Flask(__name__)
-app.config["MONGO_URI"] = MONGO_DB_URL + DATABASE_NAME
+app.config["MONGO_URI"] = MONGO_URI
+app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 mongo = PyMongo(app)
 
-# ***********************************************************
-# *                                                         *
-# *  Function to Validate Email Address                    *
-# *                                                         *
-# ***********************************************************
+
+def allowed_file(filename):
+    """
+    Check if the file extension is allowed.
+    
+    :param filename: The filename to check.
+    :return: True if the file extension is allowed, False otherwise.
+    """
+    return '.' in filename and \
+           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
 
 def validate_email(email):
     """
-    Validate Email Address.
-
-    Args:
-        email (str): Email Address to be validated.
-
-    Returns:
-        bool: True if Email Address is valid, False otherwise.
+    Validate the email address.
+    
+    :param email: The email address to validate.
+    :return: True if the email is valid, False otherwise.
     """
-    try:
-        email_regex = r"[^@]+@[^@]+\.[^@]+"
-        if re.match(email_regex, email):
-            return True
-        else:
-            raise ValueError(INVALID_EMAIL_ERROR)
-    except ValueError as e:
-        logging.error(e)
-        return False
+    return bool(re.match(EMAIL_REGEX, email))
 
-# ***********************************************************
-# *                                                         *
-# *  Function to Validate Phone Number                     *
-# *                                                         *
-# ***********************************************************
 
-def validate_phone_number(phone_number):
+def validate_phone(phone):
     """
-    Validate Phone Number.
-
-    Args:
-        phone_number (str): Phone Number to be validated.
-
-    Returns:
-        bool: True if Phone Number is valid, False otherwise.
+    Validate the phone number.
+    
+    :param phone: The phone number to validate.
+    :return: True if the phone number is valid, False otherwise.
     """
-    try:
-        phone_regex = r"\d{3}-\d{3}-\d{4}"
-        if re.match(phone_regex, phone_number):
-            return True
-        else:
-            raise ValueError(INVALID_PHONE_NUMBER_ERROR)
-    except ValueError as e:
-        logging.error(e)
-        return False
+    return bool(re.match(PHONE_REGEX, phone))
 
-# ***********************************************************
-# *                                                         *
-# *  Function to Validate Password                         *
-# *                                                         *
-# ***********************************************************
 
 def validate_password(password):
     """
-    Validate Password.
-
-    Args:
-        password (str): Password to be validated.
-
-    Returns:
-        bool: True if Password is valid, False otherwise.
+    Validate the password.
+    
+    :param password: The password to validate.
+    :return: True if the password is valid, False otherwise.
     """
-    try:
-        if len(password) < 8:
-            raise ValueError(PASSWORD_LENGTH_ERROR)
-        if not any(char.isupper() for char in password):
-            raise ValueError(PASSWORD_COMPLEXITY_ERROR)
-        if not any(char.islower() for char in password):
-            raise ValueError(PASSWORD_COMPLEXITY_ERROR)
-        if not any(char.isdigit() for char in password):
-            raise ValueError(PASSWORD_COMPLEXITY_ERROR)
-        if not any(char.special for char in password):
-            raise ValueError(PASSWORD_COMPLEXITY_ERROR)
-        return True
-    except ValueError as e:
-        logging.error(e)
-        return False
+    return bool(re.match(PASSWORD_REGEX, password))
 
-# ***********************************************************
-# *                                                         *
-# *  Function to Validate User Details                     *
-# *                                                         *
-# ***********************************************************
 
-def validate_user_details(name, age, sex, address):
+def validate_name(name):
     """
-    Validate User Details.
-
-    Args:
-        name (str): User Name.
-        age (int): User Age.
-        sex (str): User Sex.
-        address (str): User Address.
-
-    Returns:
-        bool: True if User Details are valid, False otherwise.
+    Validate the name.
+    
+    :param name: The name to validate.
+    :return: True if the name is valid, False otherwise.
     """
-    try:
-        if len(name) < 2 or not name.isalpha():
-            raise ValueError(INVALID_NAME_ERROR)
-        if age < 18 or age > 99:
-            raise ValueError(INVALID_AGE_ERROR)
-        if sex not in ["Male", "Female"]:
-            raise ValueError(INVALID_SEX_ERROR)
-        if len(address) < 5 or not all(char.isalnum() or char.isspace() for char in address):
-            raise ValueError(INVALID_ADDRESS_ERROR)
-        return True
-    except ValueError as e:
-        logging.error(e)
-        return False
+    return bool(re.match(NAME_REGEX, name))
 
-# ***********************************************************
-# *                                                         *
-# *  API Endpoints                                          *
-# *                                                         *
-# ***********************************************************
 
-# Register User
+def validate_age(age):
+    """
+    Validate the age.
+    
+    :param age: The age to validate.
+    :return: True if the age is valid, False otherwise.
+    """
+    return age in AGE_RANGE
+
+
+def validate_sex(sex):
+    """
+    Validate the sex.
+    
+    :param sex: The sex to validate.
+    :return: True if the sex is valid, False otherwise.
+    """
+    return sex in SEX_OPTIONS
+
+
+def validate_address(address):
+    """
+    Validate the address.
+    
+    :param address: The address to validate.
+    :return: True if the address is valid, False otherwise.
+    """
+    return bool(re.match(ADDRESS_REGEX, address))
+
+
 @app.route('/register', methods=['POST'])
-def register_user():
+def register():
     """
-    Register User.
-
-    Returns:
-        jsonify: Success or Error Message.
+    Handle user registration.
+    
+    :return: A JSON response with the result of the registration.
     """
     try:
-        data = request.json
+        data = request.get_json()
         email = data.get('email')
-        phone_number = data.get('phone_number')
+        phone = data.get('phone')
         password = data.get('password')
         confirm_password = data.get('confirm_password')
         security_question = data.get('security_question')
-
-        if email:
-            if not validate_email(email):
-                return jsonify({'error': INVALID_EMAIL_ERROR}), 400
-        elif phone_number:
-            if not validate_phone_number(phone_number):
-                return jsonify({'error': INVALID_PHONE_NUMBER_ERROR}), 400
-
+        
+        if not (validate_email(email) or validate_phone(phone)):
+            return jsonify({'error': 'Invalid email or phone number'}), 400
+        
+        if not validate_password(password):
+            return jsonify({'error': 'Password must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, one number, and one special character'}), 400
+        
         if password != confirm_password:
             return jsonify({'error': 'Passwords do not match'}), 400
-
-        if not validate_password(password):
-            return jsonify({'error': PASSWORD_LENGTH_ERROR}), 400
-
-        # Hash Password
+        
         hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
-
-        # Save User to MongoDB
-        user_id = mongo.db[COLLECTION_NAME].insert_one({
+        user = {
             'email': email,
-            'phone_number': phone_number,
+            'phone': phone,
             'password': hashed_password,
             'security_question': security_question
-        }).inserted_id
-
+        }
+        mongo.db[COLLECTION_USERS].insert_one(user)
         return jsonify({'message': 'User registered successfully'}), 201
+    
     except Exception as e:
-        logging.error(e)
-        return jsonify({'error': 'Internal Server Error'}), 500
+        return jsonify({'error': str(e)}), 500
 
-# Save User Details
-@app.route('/save-user-details', methods=['POST'])
-def save_user_details():
-    """
-    Save User Details.
 
-    Returns:
-        jsonify: Success or Error Message.
-    """
-    try:
-        data = request.json
-        user_id = data.get('user_id')
-        name = data.get('name')
-        age = data.get('age')
-        sex = data.get('sex')
-        address = data.get('address')
-
-        if not validate_user_details(name, age, sex, address):
-            return jsonify({'error': 'Invalid user details'}), 400
-
-        # Update User Details in MongoDB
-        mongo.db[COLLECTION_NAME].update_one({
-            '_id': ObjectId(user_id)
-        }, {
-            '$set': {
-                'name': name,
-                'age': age,
-                'sex': sex,
-                'address': address
-            }
-        })
-
-        return jsonify({'message': 'User details saved successfully'}), 200
-    except Exception as e:
-        logging.error(e)
-        return jsonify({'error': 'Internal Server Error'}), 500
-
-# Forgot Password
 @app.route('/forgot-password', methods=['POST'])
 def forgot_password():
     """
-    Forgot Password.
-
-    Returns:
-        jsonify: Success or Error Message.
+    Handle forgot password.
+    
+    :return: A JSON response with the result of the forgot password.
     """
     try:
-        data = request.json
+        data = request.get_json()
         email = data.get('email')
+        phone = data.get('phone')
         security_question_answer = data.get('security_question_answer')
-
-        # Check if Email Exists in MongoDB
-        user = mongo.db[COLLECTION_NAME].find_one({
-            'email': email
-        })
-
+        
+        if not (validate_email(email) or validate_phone(phone)):
+            return jsonify({'error': 'Invalid email or phone number'}), 400
+        
+        user = mongo.db[COLLECTION_USERS].find_one({'email': email, 'phone': phone})
         if not user:
-            return jsonify({'error': 'Email not found'}), 404
-
-        # Check if Security Question Answer is Correct
-        if user['security_question'] != security_question_answer:
-            return jsonify({'error': 'Incorrect security question answer'}), 401
-
-        # Send Password Reset Link to Email
-        # TODO: Implement Email Service
-
+            return jsonify({'error': 'User not found'}), 404
+        
+        if user['security_question_answer'] != security_question_answer:
+            return jsonify({'error': 'Incorrect security question answer'}), 400
+        
+        # Send password reset link to user's email or phone
+        # ...
         return jsonify({'message': 'Password reset link sent successfully'}), 200
+    
     except Exception as e:
-        logging.error(e)
-        return jsonify({'error': 'Internal Server Error'}), 500
+        return jsonify({'error': str(e)}), 500
 
-# Get Food Preferences
-@app.route('/food-preferences', methods=['GET'])
-def get_food_preferences():
+
+@app.route('/save-personal-info', methods=['POST'])
+def save_personal_info():
     """
-    Get Food Preferences.
-
-    Returns:
-        jsonify: List of Food Preferences.
+    Handle saving user's personal information.
+    
+    :return: A JSON response with the result of saving personal information.
     """
     try:
-        return jsonify({'food_preferences': FOOD_PREFERENCES}), 200
+        data = request.get_json()
+        name = data.get('name')
+        age = int(data.get('age'))
+        sex = data.get('sex')
+        address = data.get('address')
+        profile_picture = request.files.get('profile_picture')
+        
+        if not validate_name(name):
+            return jsonify({'error': 'Invalid name'}), 400
+        
+        if not validate_age(age):
+            return jsonify({'error': 'Age must be between 18 and 99'}), 400
+        
+        if not validate_sex(sex):
+            return jsonify({'error': 'Invalid sex'}), 400
+        
+        if not validate_address(address):
+            return jsonify({'error': 'Invalid address'}), 400
+        
+        if profile_picture and allowed_file(profile_picture.filename):
+            filename = secure_filename(profile_picture.filename)
+            profile_picture.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+        
+        user = {
+            'name': name,
+            'age': age,
+            'sex': sex,
+            'address': address,
+            'profile_picture': filename if profile_picture else None
+        }
+        mongo.db[COLLECTION_USERS].update_one({'email': data.get('email')}, {'$set': user})
+        return jsonify({'message': 'Personal information saved successfully'}), 200
+    
     except Exception as e:
-        logging.error(e)
-        return jsonify({'error': 'Internal Server Error'}), 500
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/get-food-types', methods=['GET'])
+def get_food_types():
+    """
+    Handle getting top 10 food types.
+    
+    :return: A JSON response with the top 10 food types.
+    """
+    try:
+        return jsonify({'food_types': TOP_FOOD_TYPES}), 200
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/login', methods=['POST'])
+def login():
+    """
+    Handle user login.
+    
+    :return: A JSON response with the result of the login.
+    """
+    try:
+        data = request.get_json()
+        email = data.get('email')
+        password = data.get('password')
+        
+        user = mongo.db[COLLECTION_USERS].find_one({'email': email})
+        if not user:
+            return jsonify({'error': 'Incorrect email or password'}), 401
+        
+        if not bcrypt.checkpw(password.encode('utf-8'), user['password']):
+            return jsonify({'error': 'Incorrect email or password'}), 401
+        
+        return jsonify({'message': 'User logged in successfully'}), 200
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/logout', methods=['POST'])
+def logout():
+    """
+    Handle user logout.
+    
+    :return: A JSON response with the result of the logout.
+    """
+    try:
+        # Logout logic here
+        return jsonify({'message': 'User logged out successfully'}), 200
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# Unit Tests
+import unittest
+
+class TestUserRegistrationAPI(unittest.TestCase):
+    
+    def test_register_valid_user(self):
+        # Test registering a valid user
+        data = {
+            'email': 'test@example.com',
+            'password': 'Test@123',
+            'confirm_password': 'Test@123',
+            'security_question': 'What is your favorite color?'
+        }
+        response = app.test_client().post('/register', json=data)
+        self.assertEqual(response.status_code, 201)
+    
+    def test_register_invalid_email(self):
+        # Test registering a user with an invalid email
+        data = {
+            'email': 'invalid_email',
+            'password': 'Test@123',
+            'confirm_password': 'Test@123',
+            'security_question': 'What is your favorite color?'
+        }
+        response = app.test_client().post('/register', json=data)
+        self.assertEqual(response.status_code, 400)
+    
+    def test_forgot_password_valid_user(self):
+        # Test forgot password for a valid user
+        data = {
+            'email': 'test@example.com',
+            'security_question_answer': 'Blue'
+        }
+        response = app.test_client().post('/forgot-password', json=data)
+        self.assertEqual(response.status_code, 200)
+    
+    def test_save_personal_info_valid_user(self):
+        # Test saving personal info for a valid user
+        data = {
+            'email': 'test@example.com',
+            'name': 'John Doe',
+            'age': 25,
+            'sex': 'Male',
+            'address': '123 Main St'
+        }
+        response = app.test_client().post('/save-personal-info', json=data)
+        self.assertEqual(response.status_code, 200)
+    
+    def test_login_valid_user(self):
+        # Test logging in a valid user
+        data = {
+            'email': 'test@example.com',
+            'password': 'Test@123'
+        }
+        response = app.test_client().post('/login', json=data)
+        self.assertEqual(response.status_code, 200)
+    
+    def test_logout_valid_user(self):
+        # Test logging out a valid user
+        response = app.test_client().post('/logout')
+        self.assertEqual(response.status_code, 200)
+
+if __name__ == '__main__':
+    unittest.main()
 
 if __name__ == '__main__':
     app.run(debug=True)
